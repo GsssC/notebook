@@ -92,41 +92,41 @@ Context: &EdgeControllerContext{
 	`Message.Resource`在消息路由中意义重大，`cloudcore`和`edgecore`是一对多的关系，仔细思考后发现，目前的消息路由机制无法将消息发送至指定的边缘节点。而这需要依赖`Message.Resource`记录的消息所属节点信息。其他需要对消息解析进行的模块如`cloudhub`根据此字段使用相应的`wss connectiong`将消息发送至对应节点。
 	```go
 	func BuildResource(nodeID, namespace, resourceType, resourceID string) (resource string, err error) {
-	if namespace == "" || resourceType == "" {
-		if !config.Config.EdgeSiteEnable && nodeID == "" {
-			err = fmt.Errorf("required parameter are not set (node id, namespace or resource type)")
-		} else {
-			err = fmt.Errorf("required parameter are not set (namespace or resource type)")
+		if namespace == "" || resourceType == "" {
+			if !config.Config.EdgeSiteEnable && nodeID == "" {
+				err = fmt.Errorf("required parameter are not set (node id, namespace or resource type)")
+			} else {
+				err = fmt.Errorf("required parameter are not set (namespace or resource type)")
+			}
+			return
+		}
+		
+		resource = fmt.Sprintf("%s%s%s%s%s%s%s", controller.ResourceNode, constants.ResourceSep, nodeID, constants.ResourceSep, namespace, constants.ResourceSep, resourceType)
+		if config.Config.EdgeSiteEnable {
+			resource = fmt.Sprintf("%s%s%s", namespace, constants.ResourceSep, resourceType)
+		}
+		if resourceID != "" {
+			resource += fmt.Sprintf("%s%s", constants.ResourceSep, resourceID)
 		}
 		return
-	}
-
-	resource = fmt.Sprintf("%s%s%s%s%s%s%s", controller.ResourceNode, constants.ResourceSep, nodeID, constants.ResourceSep, namespace, constants.ResourceSep, resourceType)
-	if config.Config.EdgeSiteEnable {
-		resource = fmt.Sprintf("%s%s%s", namespace, constants.ResourceSep, resourceType)
-	}
-	if resourceID != "" {
-		resource += fmt.Sprintf("%s%s", constants.ResourceSep, resourceID)
-	}
-	return
 	}	
 	```
 - 消息依赖
 	K8S中`API Resource`具有依赖关系，如`Pod`和`ConfigMap`，一个`ConfigMap`被`Pod`所引用才有意义，`Pod`资源中指明了其需要部署在哪个节点`Pod.Spec.NodeName`，在消息`BuildResource`时可以根据利用字段。如果边端在启动`Pod`时，发现没有依赖的`ConfigMap`，会向云端发送`query`请求，这个请求中也包含了节点信息，所以在首次下发`ConfigMap`消息`BuildResource`时，可以根据此信息。但在后续`ConfigMap`在云端中被更新，由于没有类似字段，更新消息构建时无法指定发向哪个节点，所以每次下发`Pod`时需要记录其被部署到哪个节点，及其依赖的`ConfigMap`，这种记录表在源码中称为`LocationCache`。
 	```go
 	type LocationCache struct {
-	// EdgeNodes is a map, key is nodeName, value is Status
-	EdgeNodes sync.Map
-	// configMapNode is a map, key is namespace/configMapName, value is nodeName
-	configMapNode sync.Map
-	// secretNode is a map, key is namespace/secretName, value is nodeName
-	secretNode sync.Map
-	// services is a map, key is namespace/serviceName, value is v1.Service
-	services sync.Map
-	// endpoints is a map, key is namespace/endpointsName, value is v1.endpoints
-	endpoints sync.Map
-	// servicePods is a map, key is namespace/serviceName, value is []v1.Pod
-	servicePods sync.Map
+		// EdgeNodes is a map, key is nodeName, value is Status
+		EdgeNodes sync.Map
+		// configMapNode is a map, key is namespace/configMapName, value is nodeName
+		configMapNode sync.Map
+		// secretNode is a map, key is namespace/secretName, value is nodeName
+		secretNode sync.Map
+		// services is a map, key is namespace/serviceName, value is v1.Service
+		services sync.Map
+		// endpoints is a map, key is namespace/endpointsName, value is v1.endpoints
+		endpoints sync.Map
+		// servicePods is a map, key is namespace/serviceName, value is []v1.Pod
+		servicePods sync.Map
 	}
 	```
 # 以Pod下发为例
